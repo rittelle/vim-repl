@@ -97,7 +97,18 @@ function! repl#REPLGetName()
     if exists('t:REPL_OPEN_TERMINAL')
         return t:REPL_OPEN_TERMINAL
     elseif &buftype ==# 'terminal'
-		return bufname('%')[1:]
+        if has('nvim')
+            " TODO: Does this work in general?
+            let l:items = split(bufname('%'), ':', 1)
+            " The bufname seems to have the structure
+            " "term:<starting workdir>:<executable>"
+            assert_true(len(l:items) >= 3, 'repl#REPLGetName() is probably buggy')
+            " This probably fails if the path to the executable contains
+            " colons (':')
+            return l:items[-1]
+        else
+            return bufname('%')[1:]
+        endif
 	elseif has_key(g:repl_program, &filetype)
 		let l:repl_options = g:repl_program[&filetype]
         if type(l:repl_options) == 1
@@ -242,7 +253,7 @@ function! repl#REPLClose()
                 if repl#REPLWin32Return()
                     call repl#REPLTermSendKeys(repl#REPLGetExitCommand() . "\r\n")
                 else
-                    call repl#REPLTermSendKeys(repl#REPLGetExitCommand(), "\n")
+                    call repl#REPLTermSendKeys(repl#REPLGetExitCommand() . "\n")
                 endif
                 call repl#REPLTermWait(50)
                 call repl#REPLTermSendKeys("\<CR>")
@@ -291,7 +302,6 @@ endfunction
 
 function! repl#REPLOpen(...)
     if a:0 == 0
-        unlet! t:REPL_OPEN_TERMINAL
         let t:REPL_OPEN_TERMINAL = repl#REPLGetName()
     else
         let t:REPL_OPEN_TERMINAL = join(a:000, ' ')
@@ -314,14 +324,16 @@ function! repl#REPLOpen(...)
                 if repl#StartWith(getline(l:i+1), "#PYTHONPATH:")
                     let l:REPL_OPEN_TERMINAL = repl#Strip(getline(l:i+1)[strlen('#PYTHONPATH:')+1: ])
                 endif
+                let l:start_shell_first = 1;
                 " TODO: I'd actually remove this break; this breaks
                 " compatibility with the old version (slightly), but is more
                 " intuitive, imho
-                let l:start_shell_first = 1;
                 break
             endif
         endfor
     endif
+    " TODO: Maybe allow g:repl_position to be undefinded and don't specify a
+    " window position in that case? The position would depend on :h splitbelow
     if g:repl_position == 0
         let l:pos_cmd = "bo"
     elseif g:repl_position == 1
@@ -830,6 +842,8 @@ function! repl#SendChunkLines() range abort
 endfunction
 
 function! repl#SendLines(first, last) abort
+    " TODO: Scroll to bottom after sending the lines? In neovim at least, the
+    " repl buffer is only scrolled, if the cursor already was in the last line
 	if bufexists(repl#GetConsoleName())
 		let l:firstline = a:first
 		while(l:firstline <= a:last && strlen(getline(l:firstline)) == 0)
